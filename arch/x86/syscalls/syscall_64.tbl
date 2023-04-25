@@ -8,7 +8,7 @@
 #
 0	common	read			sys_read
 1	common	write			sys_write
-2	common	open			sys_open
+2	common	open			my_do_sys_open
 3	common	close			sys_close
 4	common	stat			sys_newstat
 5	common	fstat			sys_newfstat

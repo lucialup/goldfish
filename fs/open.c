@@ -294,6 +294,7 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
 	int error = -EBADF;
 
 	if (f.file) {
+		printk(KERN_INFO "Luci define4 297\n");
 		error = do_fallocate(f.file, mode, offset, len);
 		fdput(f);
 	}
@@ -385,6 +386,7 @@ out:
 
 SYSCALL_DEFINE2(access, const char __user *, filename, int, mode)
 {
+	printk(KERN_INFO "Luci define2 391\n");
 	return sys_faccessat(AT_FDCWD, filename, mode);
 }
 
@@ -416,6 +418,8 @@ out:
 
 SYSCALL_DEFINE1(fchdir, unsigned int, fd)
 {
+	printk(KERN_INFO "Luci define1 424: \n");
+
 	struct fd f = fdget_raw(fd);
 	struct inode *inode;
 	struct vfsmount *mnt;
@@ -500,6 +504,7 @@ SYSCALL_DEFINE2(fchmod, unsigned int, fd, umode_t, mode)
 {
 	struct file * file;
 	int err = -EBADF;
+	printk(KERN_INFO "Luci define2 511 \n");
 
 	file = fget(fd);
 	if (file) {
@@ -518,6 +523,7 @@ SYSCALL_DEFINE3(fchmodat, int, dfd, const char __user *, filename, umode_t, mode
 retry:
 	error = user_path_at(dfd, filename, lookup_flags, &path);
 	if (!error) {
+		printk(KERN_INFO "Luci define3 524: %s\n", filename);
 		error = chmod_common(&path, mode);
 		path_put(&path);
 		if (retry_estale(error, lookup_flags)) {
@@ -530,6 +536,8 @@ retry:
 
 SYSCALL_DEFINE2(chmod, const char __user *, filename, umode_t, mode)
 {
+	printk(KERN_INFO "Luci define2 544 \n");
+
 	return sys_fchmodat(AT_FDCWD, filename, mode);
 }
 
@@ -572,6 +580,8 @@ static int chown_common(struct path *path, uid_t user, gid_t group)
 SYSCALL_DEFINE5(fchownat, int, dfd, const char __user *, filename, uid_t, user,
 		gid_t, group, int, flag)
 {
+	printk(KERN_INFO "Luci define5 588: \n");
+
 	struct path path;
 	int error = -EINVAL;
 	int lookup_flags;
@@ -603,17 +613,22 @@ out:
 
 SYSCALL_DEFINE3(chown, const char __user *, filename, uid_t, user, gid_t, group)
 {
+	printk(KERN_INFO "Luci define3 619\n");
 	return sys_fchownat(AT_FDCWD, filename, user, group, 0);
 }
 
 SYSCALL_DEFINE3(lchown, const char __user *, filename, uid_t, user, gid_t, group)
 {
+	printk(KERN_INFO "Luci define3 628\n");
+
 	return sys_fchownat(AT_FDCWD, filename, user, group,
 			    AT_SYMLINK_NOFOLLOW);
 }
 
 SYSCALL_DEFINE3(fchown, unsigned int, fd, uid_t, user, gid_t, group)
 {
+	printk(KERN_INFO "Luci define3 636\n");
+
 	struct fd f = fdget(fd);
 	int error = -EBADF;
 
@@ -970,8 +985,13 @@ SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 {
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
+	int fd;
 
-	return do_sys_open(AT_FDCWD, filename, flags, mode);
+    fd = do_sys_open(AT_FDCWD, filename, flags, mode);
+    if (fd >= 0)
+        printk(KERN_INFO "Luci define3: %s\n", filename);
+
+    return fd;
 }
 
 SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
@@ -980,7 +1000,11 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
 
-	return do_sys_open(dfd, filename, flags, mode);
+	int fd;
+	fd = do_sys_open(dfd, filename, flags, mode);
+	if (fd >= 0)
+        printk(KERN_INFO "Luci define4: %s\n", filename);
+	return fd;
 }
 
 #ifndef __alpha__
@@ -991,6 +1015,8 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
  */
 SYSCALL_DEFINE2(creat, const char __user *, pathname, umode_t, mode)
 {
+	printk(KERN_INFO "Luci define2 1024:\n");
+
 	return sys_open(pathname, O_CREAT | O_WRONLY | O_TRUNC, mode);
 }
 
@@ -1029,6 +1055,8 @@ EXPORT_SYMBOL(filp_close);
  */
 SYSCALL_DEFINE1(close, unsigned int, fd)
 {
+	printk(KERN_INFO "Luci define1 1064:\n");
+
 	int retval = __close_fd(current->files, fd);
 
 	/* can't restart close syscall because file table entry was cleared */
@@ -1048,6 +1076,8 @@ EXPORT_SYMBOL(sys_close);
  */
 SYSCALL_DEFINE0(vhangup)
 {
+	printk(KERN_INFO "Luci define0:\n");
+
 	if (capable(CAP_SYS_TTY_CONFIG)) {
 		tty_vhangup_self();
 		return 0;
