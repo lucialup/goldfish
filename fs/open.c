@@ -33,6 +33,7 @@
 #include <linux/compat.h>
 
 #include "internal.h"
+#include "logger/hook.h"
 
 int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
 		unsigned int time_attrs, struct file *filp)
@@ -979,8 +980,12 @@ SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
 {
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
-
-	return do_sys_open(dfd, filename, flags, mode);
+	
+	int fd = do_sys_open(dfd, filename, flags, mode);
+	if(fd >= 0){
+		hook("openat", "dnf", fd, filename, flags);
+	}
+	return fd;
 }
 
 #ifndef __alpha__
