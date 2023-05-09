@@ -1,12 +1,15 @@
 #include <linux/slab.h>
 #include <linux/string.h>
+
 #include "hook.h"
+
+DEFINE_PER_CPU(bool, logging_allowed) = true;
 
 #define SYS_OPEN_LOG_BUF_SIZE 4096
 
 
 // the logging is skipped for the syscalls whose path/filename contains at least one of the predefined strings
-const char* log_skip_strings[] = {"/proc/net/", "/system/"};	
+const char* log_skip_strings[] = {"/proc/net/", "/system/", "prebuilts", "sys", "dev", "kmsg", "goldfish"};	
 
 bool isLogSkipped(const char* token) {
     int i, strNr;
