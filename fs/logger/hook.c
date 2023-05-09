@@ -1,5 +1,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/sched.h>
+#include <linux/types.h>
 
 #include "hook.h"
 
@@ -9,7 +11,7 @@ DEFINE_PER_CPU(bool, logging_allowed) = true;
 
 
 // the logging is skipped for the syscalls whose path/filename contains at least one of the predefined strings
-const char* log_skip_strings[] = {"/proc/net/", "/system/", "prebuilts", "sys", "dev", "kmsg", "goldfish"};	
+const char* log_skip_strings[] = {"/system/", "prebuilts", "sys", "dev", "kmsg", "goldfish", "proc"};	
 
 bool isLogSkipped(const char* token) {
     int i, strNr;
@@ -76,6 +78,9 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
                 break;
         }
     }
+
+    pid_t pid = current->pid; // get the current process id
+    buffer_pos += snprintf(buffer + buffer_pos, SYS_OPEN_LOG_BUF_SIZE - buffer_pos, ", Process ID: %d", pid);
 
     if (strcmp(buffer, prev_buffer) == 0) {
         goto cleanup;
