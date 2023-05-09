@@ -22,6 +22,8 @@
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
 
+#include "logger/hook.h"
+
 typedef ssize_t (*io_fn_t)(struct file *, char __user *, size_t, loff_t *);
 typedef ssize_t (*iov_fn_t)(struct kiocb *, const struct iovec *,
 		unsigned long, loff_t);
@@ -480,6 +482,7 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 		file_pos_write(f.file, pos);
 		fdput(f);
 	}
+	hook("read", "d", fd);
 	return ret;
 }
 
@@ -495,6 +498,7 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		file_pos_write(f.file, pos);
 		fdput(f);
 	}
+	hook("write", "d", fd);
 
 	return ret;
 }
@@ -512,9 +516,10 @@ SYSCALL_DEFINE4(pread64, unsigned int, fd, char __user *, buf,
 	if (f.file) {
 		ret = -ESPIPE;
 		if (f.file->f_mode & FMODE_PREAD)
-			ret = vfs_read(f.file, buf, count, &pos);
+			ret = vfs_read(f.file, buf, count, &pos);		
 		fdput(f);
 	}
+	hook("pread", "d", fd);
 
 	return ret;
 }
@@ -531,10 +536,11 @@ SYSCALL_DEFINE4(pwrite64, unsigned int, fd, const char __user *, buf,
 	f = fdget(fd);
 	if (f.file) {
 		ret = -ESPIPE;
-		if (f.file->f_mode & FMODE_PWRITE)  
+		if (f.file->f_mode & FMODE_PWRITE) 
 			ret = vfs_write(f.file, buf, count, &pos);
 		fdput(f);
 	}
+	hook("pwrite", "d", fd);
 
 	return ret;
 }
@@ -787,6 +793,7 @@ SYSCALL_DEFINE3(readv, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_rchar(current, ret);
 	inc_syscr(current);
+	hook("readv", "d", fd);
 	return ret;
 }
 
@@ -806,6 +813,7 @@ SYSCALL_DEFINE3(writev, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_wchar(current, ret);
 	inc_syscw(current);
+	hook("writev", "d", fd);
 	return ret;
 }
 
@@ -836,6 +844,7 @@ SYSCALL_DEFINE5(preadv, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_rchar(current, ret);
 	inc_syscr(current);
+	hook("preadv", "d", fd);
 	return ret;
 }
 
@@ -860,6 +869,7 @@ SYSCALL_DEFINE5(pwritev, unsigned long, fd, const struct iovec __user *, vec,
 	if (ret > 0)
 		add_wchar(current, ret);
 	inc_syscw(current);
+	hook("pwritev", "d", fd);
 	return ret;
 }
 

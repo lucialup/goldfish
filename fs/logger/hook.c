@@ -17,8 +17,9 @@ bool isLogSkipped(const char* token) {
     return false;
 }
 
-
 void hook(const char *syscall_name, const char *arg_types, ...) {
+    static char prev_buffer[SYS_OPEN_LOG_BUF_SIZE] = {0};
+
     va_list args;
     char *buffer;
     int buffer_pos = 0;
@@ -73,7 +74,21 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
         }
     }
 
-    printk(KERN_INFO "Luci %s\n", buffer);
+    if (strcmp(buffer, prev_buffer) == 0) {
+        goto cleanup;
+    }
+
+    strncpy(prev_buffer, buffer, SYS_OPEN_LOG_BUF_SIZE);
+
+    if(strstr(buffer, "openat") != NULL)
+        printk(KERN_INFO "%s\n", buffer);
+    else {
+        if (this_cpu_read(logging_allowed)) {
+		    this_cpu_write(logging_allowed, false);
+		    printk(KERN_INFO "%s\n", buffer);
+		    this_cpu_write(logging_allowed, true);
+	    }
+    }
 
 cleanup:
     va_end(args);
