@@ -2,6 +2,9 @@
 #include <linux/string.h>
 #include <linux/sched.h>
 #include <linux/types.h>
+#include <linux/fdtable.h>  // for files_fdtable()
+#include <linux/path.h>  // for struct path
+#include <linux/dcache.h>  // for d_path()
 
 #include "hook.h"
 
@@ -11,7 +14,7 @@ DEFINE_PER_CPU(bool, logging_allowed) = true;
 
 
 // the logging is skipped for the syscalls whose path/filename contains at least one of the predefined strings
-const char* log_skip_strings[] = {"/system/", "prebuilts", "sys", "dev", "kmsg", "goldfish", "proc"};	
+const char* log_skip_strings[] = {"/system/", "prebuilts", "goldfish", "proc/net", "init", "/proc/kmsg", "/dev/cpuctl/tasks"};	
 
 bool isLogSkipped(const char* token) {
     int i, strNr;
@@ -24,28 +27,48 @@ bool isLogSkipped(const char* token) {
 
 void hook(const char *syscall_name, const char *arg_types, ...) {
     static char prev_buffer[SYS_OPEN_LOG_BUF_SIZE] = {0};
-
     va_list args;
     char *buffer;
     int buffer_pos = 0;
     int i;
+    struct file *file = NULL;
+    bool has_filename_arg = strchr(arg_types, 'n') || strchr(arg_types, 'p');
+    char real_path[256];
+    pid_t pid; 
+    int fd; 
 
     buffer = kmalloc(SYS_OPEN_LOG_BUF_SIZE, GFP_KERNEL);
     if (!buffer) {
         printk(KERN_ERR "Failed to allocate memory for hook logger buffer\n");
         return;
     }
+    buffer_pos += snprintf(buffer + buffer_pos, SYS_OPEN_LOG_BUF_SIZE - buffer_pos, "Syscall: %s", syscall_name);
 
     va_start(args, arg_types);
-
-    buffer_pos += snprintf(buffer + buffer_pos, SYS_OPEN_LOG_BUF_SIZE - buffer_pos, "Syscall: %s", syscall_name);
 
     for (i = 0; arg_types[i] != '\0'; i++) {
         switch (arg_types[i]) {
             case 'd':
                 {
-                    int fd = va_arg(args, int);
+                    fd = va_arg(args, int);
+                    if(fd == 0 || fd == 1)
+                        goto cleanup;
                     buffer_pos += snprintf(buffer + buffer_pos, SYS_OPEN_LOG_BUF_SIZE - buffer_pos, ", File descriptor: %d", fd);
+
+                    if (!has_filename_arg) {
+                        file = fcheck_files(current->files, fd);
+                        if (file) {
+                            struct path *path = &file->f_path;
+                            char *pathname = d_path(path, real_path, 256);
+
+                            if (isLogSkipped(pathname)) {
+                                goto cleanup;
+                            }
+                            else {
+                                buffer_pos += snprintf(buffer + buffer_pos, SYS_OPEN_LOG_BUF_SIZE - buffer_pos, ", Path: %s", pathname);
+                            }
+                        }
+                    }
                 }
                 break;
             case 'n':
@@ -79,7 +102,7 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
         }
     }
 
-    pid_t pid = current->pid; // get the current process id
+    pid = current->pid;
     buffer_pos += snprintf(buffer + buffer_pos, SYS_OPEN_LOG_BUF_SIZE - buffer_pos, ", Process ID: %d", pid);
 
     if (strcmp(buffer, prev_buffer) == 0) {
@@ -88,14 +111,10 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
 
     strncpy(prev_buffer, buffer, SYS_OPEN_LOG_BUF_SIZE);
 
-    if(strstr(buffer, "openat") != NULL)
-        printk(KERN_INFO "%s\n", buffer);
-    else {
-        if (this_cpu_read(logging_allowed)) {
-		    this_cpu_write(logging_allowed, false);
-		    printk(KERN_INFO "%s\n", buffer);
-		    this_cpu_write(logging_allowed, true);
-	    }
+    if (this_cpu_read(logging_allowed)) {
+	    this_cpu_write(logging_allowed, false);
+	    printk(KERN_INFO "%s\n", buffer);
+	    this_cpu_write(logging_allowed, true);
     }
 
 cleanup:
