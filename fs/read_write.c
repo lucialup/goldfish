@@ -485,7 +485,7 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 		file_pos_write(f.file, pos);
 		fdput(f);
 	}
-	hook("read", "d", fd);
+	hook("read", "dcb", fd, count, buf);
 	return ret;
 }
 
@@ -501,7 +501,7 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		file_pos_write(f.file, pos);
 		fdput(f);
 	}
-	hook("write", "d", fd);
+	hook("write", "dcb", fd, count, buf);
 
 	return ret;
 }
