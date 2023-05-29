@@ -2,13 +2,12 @@
 #include <linux/string.h>
 #include <linux/sched.h>
 #include <linux/types.h>
-#include <linux/fdtable.h>  // for files_fdtable()
-#include <linux/path.h>  // for struct path
-#include <linux/dcache.h>  // for d_path()
-#include <linux/uaccess.h>  // for copy_from_user()
+#include <linux/fdtable.h>
+#include <linux/path.h>
+#include <linux/dcache.h>
+#include <linux/uaccess.h>
 #include <linux/timer.h>
-#include <linux/percpu.h>
-#include <linux/mutex.h>
+
 
 #include "hook.h"
 
@@ -75,6 +74,7 @@ void setup_log_buffers(void) {
 
 void hook(const char *syscall_name, const char *arg_types, ...) {
     static char prev_buffer[LOG_BUF_SIZE] = {0};
+    static int same_buffer_count = 1;
     va_list args;
     char *buffer;
     int buffer_pos = 0;
@@ -116,7 +116,7 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
                     fd = va_arg(args, int);
                     if(fd == 0 || fd == 1)
                         goto cleanup;
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", File descriptor: %d", fd);
+                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", FD: %d", fd);
 
                     if (!has_filename_arg) {
                         file = fcheck_files(current->files, fd);
@@ -134,15 +134,6 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
                     }
                 }
                 break;
-            case 'n':
-                {
-                    const char *filename = va_arg(args, const char *);
-                    if (isLogSkipped(filename)) {
-                        goto cleanup;
-                    }
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Filename: %s", filename);
-                }
-                break;
             case 'p':
                 {
                     const char *path = va_arg(args, const char *);
@@ -150,6 +141,15 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
                         goto cleanup;
                     }
                     buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Path: %s", path);
+                }
+                break;
+            case 'n':
+                {
+                    const char *filename = va_arg(args, const char *);
+                    if (isLogSkipped(filename)) {
+                        goto cleanup;
+                    }
+                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Filename: %s", filename);
                 }
                 break;
             case 'f':
@@ -189,12 +189,35 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
     }
 
     pid = current->pid;
-    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Process ID: %d", pid);
+    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", PID: %d", pid);
 
     if (strcmp(buffer, prev_buffer) == 0) {
+        same_buffer_count++;
         goto cleanup;
-    }
+    } else if (same_buffer_count > 1) {
+        
+        if(same_buffer_count > 2) {
+            char *pos = strstr(prev_buffer, " -- x");
+            if (pos != NULL) {
+                snprintf(pos + 4, sizeof(prev_buffer) - (pos - prev_buffer) - 4, "%d times", same_buffer_count);
+            } else {
+                char repeated_msg[50];
+                snprintf(repeated_msg, sizeof(repeated_msg), " -- x%d times", same_buffer_count-1);
+                strncat(prev_buffer, repeated_msg, LOG_BUF_SIZE - strlen(prev_buffer) - 1);
+            }
+        }
 
+        mutex_lock(&log_buf->buffer_lock);
+        if (log_buf->index < NUM_LOG_BUFFERS) {
+            strncpy(log_buf->buffers[log_buf->index], prev_buffer, LOG_BUF_SIZE);
+            log_buf->index++;
+        } else {
+            printk(KERN_ERR "Log buffer for CPU %d full, skipping log message", cpu);
+        }
+        mutex_unlock(&log_buf->buffer_lock);
+
+        same_buffer_count = 1;
+    }
     strncpy(prev_buffer, buffer, LOG_BUF_SIZE);
 
     mutex_lock(&log_buf->buffer_lock);
