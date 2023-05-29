@@ -252,14 +252,14 @@ SYSCALL_DEFINE3(lseek, unsigned int, fd, off_t, offset, unsigned int, whence)
 			retval = -EOVERFLOW;	/* LFS: should only happen on 32 bit platforms */
 	}
 	fdput(f);
-	hook("lseek","d",fd);
+	hook("lseek", "d", fd);
 	return retval;
 }
 
 #ifdef CONFIG_COMPAT
 COMPAT_SYSCALL_DEFINE3(lseek, unsigned int, fd, compat_off_t, offset, unsigned int, whence)
 {
-	hook("lseek","d",fd);
+	hook("lseek", "d", fd);
 	return sys_lseek(fd, offset, whence);
 }
 #endif
@@ -272,7 +272,7 @@ SYSCALL_DEFINE5(llseek, unsigned int, fd, unsigned long, offset_high,
 	int retval;
 	struct fd f = fdget(fd);
 	loff_t offset;
-		hook("llseek","d",fd);
+		hook("llseek", "d", fd);
 
 	if (!f.file)
 		return -EBADF;
@@ -974,7 +974,7 @@ COMPAT_SYSCALL_DEFINE3(readv, unsigned long, fd,
 	ret = compat_readv(f.file, vec, vlen, &pos);
 	f.file->f_pos = pos;
 	fdput(f);
-		hook("compat_readv","d",fd);
+	hook("compat_readv", "d", fd);
 	return ret;
 }
 
@@ -994,7 +994,7 @@ COMPAT_SYSCALL_DEFINE4(preadv64, unsigned long, fd,
 	if (f.file->f_mode & FMODE_PREAD)
 		ret = compat_readv(f.file, vec, vlen, &pos);
 	fdput(f);
-			hook("compat_preadv64","d",fd);
+	hook("compat_preadv64", "d", fd);
 	return ret;
 }
 
@@ -1002,7 +1002,7 @@ COMPAT_SYSCALL_DEFINE5(preadv, unsigned long, fd,
 		const struct compat_iovec __user *,vec,
 		unsigned long, vlen, u32, pos_low, u32, pos_high)
 {
-			hook("compat_preadv","d",fd);
+	hook("compat_preadv", "d", fd);
 	loff_t pos = ((loff_t)pos_high << 32) | pos_low;
 	return compat_sys_preadv64(fd, vec, vlen, pos);
 }
@@ -1043,7 +1043,7 @@ COMPAT_SYSCALL_DEFINE3(writev, unsigned long, fd,
 	ret = compat_writev(f.file, vec, vlen, &pos);
 	f.file->f_pos = pos;
 	fdput(f);
-	hook("compat_writev","d",fd);
+	hook("compat_writev", "d", fd);
 	return ret;
 }
 
@@ -1063,7 +1063,7 @@ COMPAT_SYSCALL_DEFINE4(pwritev64, unsigned long, fd,
 	if (f.file->f_mode & FMODE_PWRITE)
 		ret = compat_writev(f.file, vec, vlen, &pos);
 	fdput(f);
-	hook("compat_pwritev64","d",fd);
+	hook("compat_pwritev64", "d", fd);
 	return ret;
 }
 
@@ -1072,7 +1072,7 @@ COMPAT_SYSCALL_DEFINE5(pwritev, unsigned long, fd,
 		unsigned long, vlen, u32, pos_low, u32, pos_high)
 {
 	loff_t pos = ((loff_t)pos_high << 32) | pos_low;
-	hook("compat_pwritev","d",fd);
+	hook("compat_pwritev", "d", fd);
 	return compat_sys_pwritev64(fd, vec, vlen, pos);
 }
 #endif
@@ -1190,7 +1190,6 @@ SYSCALL_DEFINE4(sendfile, int, out_fd, int, in_fd, off_t __user *, offset, size_
 			return -EFAULT;
 		return ret;
 	}
-	hook("sendfile","d",in_fd);
 	return do_sendfile(out_fd, in_fd, NULL, count, 0);
 }
 
@@ -1207,7 +1206,6 @@ SYSCALL_DEFINE4(sendfile64, int, out_fd, int, in_fd, loff_t __user *, offset, si
 			return -EFAULT;
 		return ret;
 	}
-	hook("sendfile64","d",in_fd);
 	return do_sendfile(out_fd, in_fd, NULL, count, 0);
 }
 
@@ -1228,7 +1226,6 @@ COMPAT_SYSCALL_DEFINE4(sendfile, int, out_fd, int, in_fd,
 			return -EFAULT;
 		return ret;
 	}
-	hook("compat_sendfile","d",in_fd);
 	return do_sendfile(out_fd, in_fd, NULL, count, 0);
 }
 
@@ -1246,8 +1243,6 @@ COMPAT_SYSCALL_DEFINE4(sendfile64, int, out_fd, int, in_fd,
 			return -EFAULT;
 		return ret;
 	}
-	hook("compat_sendfile64","d",in_fd);
-
 	return do_sendfile(out_fd, in_fd, NULL, count, 0);
 }
 #endif
