@@ -71,27 +71,7 @@ void setup_log_buffers(void) {
     }
 }
 
-
-void hook(const char *syscall_name, const char *arg_types, ...) {
-    static char prev_buffer[LOG_BUF_SIZE] = {0};
-    static int same_buffer_count = 1;
-    struct log_buffer *log_buf;
-    va_list args;
-    char *buffer;
-    int buffer_pos = 0;
-    int i;
-    struct file *file = NULL;
-    bool has_filename_arg = strchr(arg_types, 'n') || strchr(arg_types, 'p');
-    char real_path[256];
-    pid_t pid;
-    int fd;
-    size_t count = 0;
-    int cpu;
-
-    get_cpu();
-    cpu = smp_processor_id();
-    log_buf = per_cpu_ptr(&log_buffers, cpu);
-
+void initialize_syscall_log_table_if_needed(void) {
     if (!initialized_buffers) {
         mutex_lock(&buf_init_lock);
         if (!initialized_buffers) {
@@ -100,24 +80,26 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
         }
         mutex_unlock(&buf_init_lock);
     }
+}
 
-    buffer = kmalloc(LOG_BUF_SIZE, GFP_KERNEL);
-    if (!buffer) {
-        printk(KERN_ERR "Failed to allocate memory for hook logger buffer\n");
-        goto cleanup;
-    }
-    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, "Syscall: %s", syscall_name);
+int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, const char *arg_types, va_list args) {
+    int i;
+    struct file *file = NULL;
+    char real_path[256];
+    pid_t pid;
+    int fd;
+    size_t count = 0;
+    bool has_filename_arg = strchr(arg_types, 'n') || strchr(arg_types, 'p');
 
-    va_start(args, arg_types);
-
+    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "Syscall: %s", syscall_name);
     for (i = 0; arg_types[i] != '\0'; i++) {
         switch (arg_types[i]) {
             case 'd':
                 {
                     fd = va_arg(args, int);
                     if(fd == 0 || fd == 1)
-                        goto cleanup;
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", FD: %d", fd);
+                        return -1;
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", FD: %d", fd);
 
                     if (!has_filename_arg) {
                         file = fcheck_files(current->files, fd);
@@ -126,10 +108,10 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
                             char *pathname = d_path(path, real_path, 256);
 
                             if (isLogSkipped(pathname)) {
-                                goto cleanup;
+                                return -1;
                             }
                             else {
-                                buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Path: %s", pathname);
+                                *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Path: %s", pathname);
                             }
                         }
                     }
@@ -139,30 +121,30 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
                 {
                     const char *path = va_arg(args, const char *);
                     if (isLogSkipped(path)) {
-                        goto cleanup;
+                        return -1;
                     }
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Path: %s", path);
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Path: %s", path);
                 }
                 break;
             case 'n':
                 {
                     const char *filename = va_arg(args, const char *);
                     if (isLogSkipped(filename)) {
-                        goto cleanup;
+                        return -1;
                     }
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Filename: %s", filename);
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Filename: %s", filename);
                 }
                 break;
             case 'f':
                 {
                     int flags = va_arg(args, int);
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Flags: %d", flags);
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Flags: %d", flags);
                 }
                 break;
             case 'c':
                 {
                     count = va_arg(args, int);
-                    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Count: %zu", count);
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Count: %zu", count);
                 }
                 break;
             case 'b':
@@ -177,9 +159,10 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
 
                     if (copied == 0) {
                         buf_copy[to_copy] = '\0';
-                        buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", Buf: \"%s\"", buf_copy);
+                        *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Buf: \"%s\"", buf_copy);
                     } else {
                         printk(KERN_ERR "Failed to copy user buffer in hook: %lu bytes not copied\n", copied);
+                        return -1;  // skip logging
                     }
                 }
                 break;
@@ -190,37 +173,34 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
     }
 
     pid = current->pid;
-    buffer_pos += snprintf(buffer + buffer_pos, LOG_BUF_SIZE - buffer_pos, ", PID: %d", pid);
+    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", PID: %d", pid);
 
-    if (strcmp(buffer, prev_buffer) == 0) {
-        same_buffer_count++;
-        goto cleanup;
-    } else if (same_buffer_count > 1) {
-        
-        if(same_buffer_count > 2) {
-            char *pos = strstr(prev_buffer, " -- x");
-            if (pos != NULL) {
-                snprintf(pos + 4, sizeof(prev_buffer) - (pos - prev_buffer) - 4, "%d times", same_buffer_count);
-            } else {
-                char repeated_msg[50];
-                snprintf(repeated_msg, sizeof(repeated_msg), " -- x%d times", same_buffer_count-1);
-                strncat(prev_buffer, repeated_msg, LOG_BUF_SIZE - strlen(prev_buffer) - 1);
-            }
-        }
+    return 0;
+}
 
-        mutex_lock(&log_buf->buffer_lock);
-        if (log_buf->index < NUM_LOG_BUFFERS) {
-            strncpy(log_buf->buffers[log_buf->index], prev_buffer, LOG_BUF_SIZE);
-            log_buf->index++;
+void handle_repeated_log_message(char *buffer, char *prev_buffer, struct log_buffer *log_buf, int cpu, int same_buffer_count) {
+    if(same_buffer_count > 2) {
+        char *pos = strstr(prev_buffer, " -- x");
+        if (pos != NULL) {
+            snprintf(pos + 4, sizeof(prev_buffer) - (pos - prev_buffer) - 4, "%d times", same_buffer_count);
         } else {
-            printk(KERN_ERR "Log buffer for CPU %d full, skipping log message", cpu);
+            char repeated_msg[50];
+            snprintf(repeated_msg, sizeof(repeated_msg), " -- x%d times", same_buffer_count-1);
+            strncat(prev_buffer, repeated_msg, LOG_BUF_SIZE - strlen(prev_buffer) - 1);
         }
-        mutex_unlock(&log_buf->buffer_lock);
-
-        same_buffer_count = 1;
     }
-    strncpy(prev_buffer, buffer, LOG_BUF_SIZE);
 
+    mutex_lock(&log_buf->buffer_lock);
+    if (log_buf->index < NUM_LOG_BUFFERS) {
+        strncpy(log_buf->buffers[log_buf->index], prev_buffer, LOG_BUF_SIZE);
+        log_buf->index++;
+    } else {
+        printk(KERN_ERR "Log buffer for CPU %d full, skipping log message", cpu);
+    }
+    mutex_unlock(&log_buf->buffer_lock);
+}
+
+void add_log_message(char *buffer, struct log_buffer *log_buf, int cpu) {
     mutex_lock(&log_buf->buffer_lock);
     if (log_buf->index < NUM_LOG_BUFFERS) {
         strncpy(log_buf->buffers[log_buf->index], buffer, LOG_BUF_SIZE);
@@ -229,9 +209,68 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
         printk(KERN_ERR "Log buffer for CPU %d full, skipping log message", cpu);
     }
     mutex_unlock(&log_buf->buffer_lock);
+}
+
+void initialize_hook(int *cpu, struct log_buffer **log_buf) {
+    get_cpu();
+    *cpu = smp_processor_id();
+    *log_buf = per_cpu_ptr(&log_buffers, *cpu);
+
+    initialize_syscall_log_table_if_needed();
+}
+
+char *create_buffer(void) {
+    char *buffer;
+    *buffer = kmalloc(LOG_BUF_SIZE, GFP_KERNEL);
+    if (!buffer) {
+        printk(KERN_ERR "Failed to allocate memory for hook logger buffer\n");
+    }
+    return buffer;
+}
+
+void handle_log_message(struct log_buffer *log_buf, int cpu, char *buffer, char *prev_buffer, int *same_buffer_count) {
+    if (strcmp(buffer, prev_buffer) == 0) {
+        (*same_buffer_count)++;
+        return; // repeated log message, skip log
+    } else if (*same_buffer_count > 1) {
+        handle_repeated_log_message(buffer, prev_buffer, log_buf, cpu, *same_buffer_count);
+        *same_buffer_count = 1;
+    }
+    strncpy(prev_buffer, buffer, LOG_BUF_SIZE);
+
+    add_log_message(buffer, log_buf, cpu);
+}
+
+
+void hook(const char *syscall_name, const char *arg_types, ...) {
+    struct log_buffer *log_buf;
+    va_list args;
+    char *buffer;
+    int buffer_pos = 0;
+    int cpu;
+    int ret;
+    static char prev_buffer[LOG_BUF_SIZE] = {0};
+    static int same_buffer_count = 1;
+
+    initialize_hook(&cpu, &log_buf);
+
+    buffer = create_buffer();
+    if(!buffer) {
+        goto cleanup;
+    }
+
+    va_start(args, arg_types);
+    ret = create_log_buffer(buffer, &buffer_pos, syscall_name, arg_types, args);
+    va_end(args);
+
+    // log message skipped due to predefined strings in path/filename
+    if (ret < 0) {
+        goto cleanup;
+    }
+
+    handle_log_message(log_buf, cpu, buffer, prev_buffer, &same_buffer_count);
 
 cleanup:
-    va_end(args);
     kfree(buffer);
     put_cpu();
 }
