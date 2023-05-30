@@ -75,6 +75,7 @@ void setup_log_buffers(void) {
 void hook(const char *syscall_name, const char *arg_types, ...) {
     static char prev_buffer[LOG_BUF_SIZE] = {0};
     static int same_buffer_count = 1;
+    struct log_buffer *log_buf;
     va_list args;
     char *buffer;
     int buffer_pos = 0;
@@ -89,7 +90,7 @@ void hook(const char *syscall_name, const char *arg_types, ...) {
 
     get_cpu();
     cpu = smp_processor_id();
-    struct log_buffer *log_buf = per_cpu_ptr(&log_buffers, cpu);
+    log_buf = per_cpu_ptr(&log_buffers, cpu);
 
     if (!initialized_buffers) {
         mutex_lock(&buf_init_lock);

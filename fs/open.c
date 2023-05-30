@@ -969,9 +969,11 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 
 SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 {
+	int fd;
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
-	int fd = do_sys_open(AT_FDCWD, filename, flags, mode);
+
+	fd = do_sys_open(AT_FDCWD, filename, flags, mode);
 	if(fd >= 0){
 		hook("open", "dnf", fd, filename, flags);
 	}
@@ -981,10 +983,11 @@ SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
 		umode_t, mode)
 {
+	int fd;
 	if (force_o_largefile())
 		flags |= O_LARGEFILE;
 	
-	int fd = do_sys_open(dfd, filename, flags, mode);
+	fd = do_sys_open(dfd, filename, flags, mode);
 	if(fd >= 0){
 		hook("openat", "dnf", fd, filename, flags);
 	}
