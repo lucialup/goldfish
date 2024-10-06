@@ -186,7 +186,7 @@ void handle_repeated_log_message(char *buffer, char *prev_buffer, struct log_buf
         } else {
             char repeated_msg[50];
             snprintf(repeated_msg, sizeof(repeated_msg), " -- x%d times", same_buffer_count-1);
-            strncat(prev_buffer, repeated_msg, LOG_BUF_SIZE - strlen(prev_buffer) - 1);
+            strncat(prev_buffer, repeated_msg, min(sizeof(prev_buffer) - strlen(prev_buffer) - 1, sizeof(repeated_msg)));
         }
     }
 
@@ -221,7 +221,7 @@ void initialize_hook(int *cpu, struct log_buffer **log_buf) {
 
 char *create_buffer(void) {
     char *buffer;
-    *buffer = kmalloc(LOG_BUF_SIZE, GFP_KERNEL);
+    buffer = kmalloc(LOG_BUF_SIZE, GFP_KERNEL);
     if (!buffer) {
         printk(KERN_ERR "Failed to allocate memory for hook logger buffer\n");
     }
