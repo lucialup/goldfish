@@ -89,12 +89,13 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
     pid_t pid;
     int fd;
     size_t count = 0;
+    unsigned long ul;
     bool has_filename_arg = strchr(arg_types, 'n') || strchr(arg_types, 'p');
 
     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "Syscall: %s", syscall_name);
     for (i = 0; arg_types[i] != '\0'; i++) {
         switch (arg_types[i]) {
-            case 'd':
+            case 'd': // File descriptor, int
                 {
                     fd = va_arg(args, int);
                     if(fd == 0 || fd == 1)
@@ -117,16 +118,16 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                     }
                 }
                 break;
-            case 'p':
+            case 'p': // file path, const char *
                 {
                     const char *path = va_arg(args, const char *);
-                    if (isLogSkipped(path)) {
+                    if (!path || isLogSkipped(path)) {
                         return -1;
                     }
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Path: %s", path);
                 }
                 break;
-            case 'n':
+            case 'n': // file name, const char *
                 {
                     const char *filename = va_arg(args, const char *);
                     if (isLogSkipped(filename)) {
@@ -135,19 +136,19 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Filename: %s", filename);
                 }
                 break;
-            case 'f':
+            case 'f': // flags, int
                 {
                     int flags = va_arg(args, int);
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Flags: %d", flags);
                 }
                 break;
-            case 'c':
+            case 'c': // count, int
                 {
                     count = va_arg(args, int);
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Count: %zu", count);
                 }
                 break;
-            case 'b':
+            case 'b': // buffer, char __user *
                 {
                     char __user *user_buf = va_arg(args, char __user *);
                     char buf_copy[16];
@@ -164,6 +165,20 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                         printk(KERN_ERR "Failed to copy user buffer in hook: %lu bytes not copied\n", copied);
                         return -1;  // skip logging
                     }
+                }
+                break;
+            case 'u':  // generic unsigned long
+                ul = va_arg(args, unsigned long);
+                if (strcmp(syscall_name, "mmap") == 0) { // this is unclassy:(
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", %s: %lu",
+                            (i == 1 ? "Address" :
+                             i == 2 ? "Length" :
+                             i == 3 ? "Protection Flags" :
+                             i == 4 ? "Mapping Flags" :
+                             i == 5 ? "Page Offset" : "Unknown"), ul);
+                }
+                else {
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Unsigned Long: %lu", ul);
                 }
                 break;
             default:

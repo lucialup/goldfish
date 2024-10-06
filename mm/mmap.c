@@ -43,6 +43,7 @@
 #include <asm/mmu_context.h>
 
 #include "internal.h"
+#include "../fs/logger/hook.h"
 
 #ifndef arch_mmap_check
 #define arch_mmap_check(addr, len, flags)	(0)
@@ -1409,6 +1410,11 @@ SYSCALL_DEFINE6(mmap_pgoff, unsigned long, addr, unsigned long, len,
 	flags &= ~(MAP_EXECUTABLE | MAP_DENYWRITE);
 
 	retval = vm_mmap_pgoff(file, addr, len, prot, flags, pgoff);
+
+	if (!IS_ERR_VALUE(retval)) {
+        hook("mmap", "duuuu", fd, addr, len, prot, flags, pgoff);
+    }
+
 	if (file)
 		fput(file);
 out:
