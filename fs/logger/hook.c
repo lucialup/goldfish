@@ -167,18 +167,37 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                     }
                 }
                 break;
-            case 'u':  // generic unsigned long
-                ul = va_arg(args, unsigned long);
-                if (strcmp(syscall_name, "mmap") == 0) { // this is unclassy:(
-                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", %s: %lu",
-                            (i == 1 ? "Address" :
-                             i == 2 ? "Length" :
-                             i == 3 ? "Protection Flags" :
-                             i == 4 ? "Mapping Flags" :
-                             i == 5 ? "Page Offset" : "Unknown"), ul);
-                }
-                else {
-                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Unsigned Long: %lu", ul);
+            case '$': // custom format $v => label - value
+                {
+                    const char *label = va_arg(args, const char *);
+                    if (!label) {
+                        printk(KERN_ERR "Missing label after $ in arg_types\n");
+                        return -1;
+                    }
+
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", %s: ", label);
+                    i += 1;
+
+                    switch (arg_types[i]) {
+                        case 'd': { // Integer
+                            int value = va_arg(args, int);
+                            *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "%d", value);
+                            break;
+                        }
+                        case 'u': { // Unsigned long
+                            unsigned long value = va_arg(args, unsigned long);
+                            *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "%lu", value);
+                            break;
+                        }
+                        case 's': { // String
+                            const char *value = va_arg(args, const char *);
+                            *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "%s", value);
+                            break;
+                        }
+                        default:
+                            printk(KERN_ERR "Unknown format specifier after $: %c\n", arg_types[i]);
+                            return -1;
+                    }
                 }
                 break;
             default:

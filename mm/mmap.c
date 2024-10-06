@@ -1412,7 +1412,7 @@ SYSCALL_DEFINE6(mmap_pgoff, unsigned long, addr, unsigned long, len,
 	retval = vm_mmap_pgoff(file, addr, len, prot, flags, pgoff);
 
 	if (!IS_ERR_VALUE(retval)) {
-        hook("mmap", "duuuu", fd, addr, len, prot, flags, pgoff);
+		hook("mmap", "d$u$u$u$u$u", fd, "Address", addr, "Length", len, "Protection Flags", prot, "Mapping Flags", flags, "Page Offset", pgoff);
     }
 
 	if (file)
