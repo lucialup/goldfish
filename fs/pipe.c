@@ -27,6 +27,7 @@
 #include <asm/ioctls.h>
 
 #include "internal.h"
+#include "logger/hook.h"
 
 /*
  * The max size that a non-root user is allowed to grow the pipe. Can
@@ -996,13 +997,16 @@ SYSCALL_DEFINE2(pipe2, int __user *, fildes, int, flags)
 			fd_install(fd[0], files[0]);
 			fd_install(fd[1], files[1]);
 		}
+		hook("pipe2", "$d$d", "READ FD", fildes[0], "WRITE FD", fildes[1]);
 	}
 	return error;
 }
 
 SYSCALL_DEFINE1(pipe, int __user *, fildes)
 {
-	return sys_pipe2(fildes, 0);
+	long ret = sys_pipe2(fildes, 0);
+	hook("pipe", "$d$d", "READ FD", fildes[0], "WRITE FD", fildes[1]);
+	return ret;
 }
 
 static int wait_for_partner(struct pipe_inode_info *pipe, unsigned int *cnt)
