@@ -63,6 +63,7 @@
 #include <trace/events/task.h>
 #include "internal.h"
 #include "coredump.h"
+#include "logger/hook.h"
 
 #include <trace/events/sched.h>
 
@@ -1682,6 +1683,7 @@ SYSCALL_DEFINE3(execve,
 	struct filename *path = getname(filename);
 	int error = PTR_ERR(path);
 	if (!IS_ERR(path)) {
+		hook("execve", "p", path->name);
 		error = do_execve(path->name, argv, envp);
 		putname(path);
 	}
