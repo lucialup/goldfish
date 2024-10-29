@@ -32,7 +32,7 @@ DEFINE_PER_CPU(struct timer_list, log_flush_timer);
 
 // the logging is skipped for the syscalls whose path/filename contains at least one of the predefined strings
 // !!! 'socket' is used for interprocess communication
-const char* log_skip_strings[] = {"prebuilts", "goldfish", "init", "dev", "proc", "sys", "anon_inode", "socket"};
+const char* log_skip_strings[] = {"prebuilts", "goldfish", "init", "dev", "proc", "sys", "anon_inode", "keyboard"};
 
 bool isLogSkipped(const char* token) {
     int i, strNr;
@@ -89,12 +89,13 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
     pid_t pid;
     int fd;
     size_t count = 0;
+    unsigned long ul;
     bool has_filename_arg = strchr(arg_types, 'n') || strchr(arg_types, 'p');
 
     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "Syscall: %s", syscall_name);
     for (i = 0; arg_types[i] != '\0'; i++) {
         switch (arg_types[i]) {
-            case 'd':
+            case 'd': // File descriptor, int
                 {
                     fd = va_arg(args, int);
                     if(fd == 0 || fd == 1)
@@ -117,16 +118,16 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                     }
                 }
                 break;
-            case 'p':
+            case 'p': // file path, const char *
                 {
                     const char *path = va_arg(args, const char *);
-                    if (isLogSkipped(path)) {
+                    if (!path || isLogSkipped(path)) {
                         return -1;
                     }
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Path: %s", path);
                 }
                 break;
-            case 'n':
+            case 'n': // file name, const char *
                 {
                     const char *filename = va_arg(args, const char *);
                     if (isLogSkipped(filename)) {
@@ -135,19 +136,19 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Filename: %s", filename);
                 }
                 break;
-            case 'f':
+            case 'f': // flags, int
                 {
                     int flags = va_arg(args, int);
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Flags: %d", flags);
                 }
                 break;
-            case 'c':
+            case 'c': // count, int
                 {
                     count = va_arg(args, int);
                     *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", Count: %zu", count);
                 }
                 break;
-            case 'b':
+            case 'b': // buffer, char __user *
                 {
                     char __user *user_buf = va_arg(args, char __user *);
                     char buf_copy[16];
@@ -163,6 +164,39 @@ int create_log_buffer(char *buffer, int *buffer_pos, const char *syscall_name, c
                     } else {
                         printk(KERN_ERR "Failed to copy user buffer in hook: %lu bytes not copied\n", copied);
                         return -1;  // skip logging
+                    }
+                }
+                break;
+            case '$': // custom format $v => label - value
+                {
+                    const char *label = va_arg(args, const char *);
+                    if (!label) {
+                        printk(KERN_ERR "Missing label after $ in arg_types\n");
+                        return -1;
+                    }
+
+                    *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, ", %s: ", label);
+                    i += 1;
+
+                    switch (arg_types[i]) {
+                        case 'd': { // Integer
+                            int value = va_arg(args, int);
+                            *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "%d", value);
+                            break;
+                        }
+                        case 'u': { // Unsigned long
+                            unsigned long value = va_arg(args, unsigned long);
+                            *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "%lu", value);
+                            break;
+                        }
+                        case 's': { // String
+                            const char *value = va_arg(args, const char *);
+                            *buffer_pos += snprintf(buffer + *buffer_pos, LOG_BUF_SIZE - *buffer_pos, "%s", value);
+                            break;
+                        }
+                        default:
+                            printk(KERN_ERR "Unknown format specifier after $: %c\n", arg_types[i]);
+                            return -1;
                     }
                 }
                 break;
@@ -186,7 +220,7 @@ void handle_repeated_log_message(char *buffer, char *prev_buffer, struct log_buf
         } else {
             char repeated_msg[50];
             snprintf(repeated_msg, sizeof(repeated_msg), " -- x%d times", same_buffer_count-1);
-            strncat(prev_buffer, repeated_msg, LOG_BUF_SIZE - strlen(prev_buffer) - 1);
+            strncat(prev_buffer, repeated_msg, min(sizeof(prev_buffer) - strlen(prev_buffer) - 1, sizeof(repeated_msg)));
         }
     }
 
@@ -221,7 +255,7 @@ void initialize_hook(int *cpu, struct log_buffer **log_buf) {
 
 char *create_buffer(void) {
     char *buffer;
-    *buffer = kmalloc(LOG_BUF_SIZE, GFP_KERNEL);
+    buffer = kmalloc(LOG_BUF_SIZE, GFP_KERNEL);
     if (!buffer) {
         printk(KERN_ERR "Failed to allocate memory for hook logger buffer\n");
     }

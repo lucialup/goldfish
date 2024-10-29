@@ -23,6 +23,8 @@
 #include <linux/rcupdate.h>
 #include <linux/workqueue.h>
 
+#include "logger/hook.h"
+
 int sysctl_nr_open __read_mostly = 1024*1024;
 int sysctl_nr_open_min = BITS_PER_LONG;
 int sysctl_nr_open_max = 1024 * 1024; /* raised later */
@@ -847,6 +849,7 @@ SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
 	int err = -EBADF;
 	struct file *file;
 	struct files_struct *files = current->files;
+	int ret;
 
 	if ((flags & ~O_CLOEXEC) != 0)
 		return -EINVAL;
@@ -867,7 +870,12 @@ SYSCALL_DEFINE3(dup3, unsigned int, oldfd, unsigned int, newfd, int, flags)
 			goto Ebadf;
 		goto out_unlock;
 	}
-	return do_dup2(files, file, newfd, flags);
+
+	ret = do_dup2(files, file, newfd, flags);
+	if (err >= 0) {
+        hook("dup3", "$d$df", "OLD FD", oldfd, "NEW FD", newfd, flags);  // Log old FD, new FD, and flags
+    }
+	return ret;
 
 Ebadf:
 	err = -EBADF;
@@ -878,6 +886,8 @@ out_unlock:
 
 SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
 {
+	int ret;
+
 	if (unlikely(newfd == oldfd)) { /* corner case */
 		struct files_struct *files = current->files;
 		int retval = oldfd;
@@ -888,7 +898,12 @@ SYSCALL_DEFINE2(dup2, unsigned int, oldfd, unsigned int, newfd)
 		rcu_read_unlock();
 		return retval;
 	}
-	return sys_dup3(oldfd, newfd, 0);
+
+	ret = sys_dup3(oldfd, newfd, 0);
+	if (ret >= 0) {
+        hook("dup2", "$d$d", "OLD FD", oldfd, "NEW FD", newfd);
+    }
+	return ret;
 }
 
 SYSCALL_DEFINE1(dup, unsigned int, fildes)
@@ -898,8 +913,12 @@ SYSCALL_DEFINE1(dup, unsigned int, fildes)
 
 	if (file) {
 		ret = get_unused_fd();
-		if (ret >= 0)
+		if (ret >= 0) {
 			fd_install(ret, file);
+
+			// Log the dup syscall
+			hook("dup", "$d$d", "OLD FD", fildes, "NEW FD", ret);
+		}
 		else
 			fput(file);
 	}

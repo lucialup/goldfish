@@ -83,6 +83,7 @@
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/task.h>
+#include "../fs/logger/hook.h"
 
 /*
  * Protected counters by write_lock_irq(&tasklist_lock)
@@ -1721,7 +1722,11 @@ pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 SYSCALL_DEFINE0(fork)
 {
 #ifdef CONFIG_MMU
-	return do_fork(SIGCHLD, 0, 0, NULL, NULL);
+	pid_t pid = do_fork(SIGCHLD, 0, 0, NULL, NULL);
+	if (pid >= 0) {
+		hook("fork", "$d", "NEW PID", pid);
+	}
+	return pid;
 #else
 	/* can not support in nommu mode */
 	return(-EINVAL);
@@ -1732,8 +1737,12 @@ SYSCALL_DEFINE0(fork)
 #ifdef __ARCH_WANT_SYS_VFORK
 SYSCALL_DEFINE0(vfork)
 {
-	return do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD, 0, 
+	pid_t pid = do_fork(CLONE_VFORK | CLONE_VM | SIGCHLD, 0, 
 			0, NULL, NULL);
+	if (pid >= 0) {
+		hook("vfork", "$d", "NEW PID", pid);
+	}
+	return pid;
 }
 #endif
 
@@ -1755,7 +1764,11 @@ SYSCALL_DEFINE5(clone, unsigned long, clone_flags, unsigned long, newsp,
 		 int, tls_val)
 #endif
 {
-	return do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr);
+	pid_t pid = do_fork(clone_flags, newsp, 0, parent_tidptr, child_tidptr);
+	if (pid >= 0) {
+        hook("clone", "$df", "NEW PID", pid, clone_flags);
+    }
+	return pid;
 }
 #endif
 
