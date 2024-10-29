@@ -32,7 +32,7 @@ DEFINE_PER_CPU(struct timer_list, log_flush_timer);
 
 // the logging is skipped for the syscalls whose path/filename contains at least one of the predefined strings
 // !!! 'socket' is used for interprocess communication
-const char* log_skip_strings[] = {"prebuilts", "goldfish", "init", "dev", "proc", "sys", "anon_inode"};
+const char* log_skip_strings[] = {"prebuilts", "goldfish", "init", "dev", "proc", "sys", "anon_inode", "keyboard"};
 
 bool isLogSkipped(const char* token) {
     int i, strNr;
